@@ -1,0 +1,145 @@
+# ServiceAccount for the workspace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workspace-deployer
+  namespace: ${NAMESPACE}
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+---
+# Role with permissions to manage deployments, services, pods, etc. within the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ${NAMESPACE}
+  name: workspace-deployer-role
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+rules:
+# Core resources
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "pods/exec", "pods/portforward"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+
+# Apps resources
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Networking resources
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Extensions (for legacy ingress support)
+- apiGroups: ["extensions"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Batch resources (jobs, cronjobs)
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Autoscaling
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Policy resources
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# Metrics (for kubectl top)
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+
+# ServiceAccounts in the namespace (for skaffold)
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+# RBAC resources within the namespace (for skaffold to create roles/rolebindings)
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# RoleBinding to bind the role to the service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workspace-deployer-binding
+  namespace: ${NAMESPACE}
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+subjects:
+- kind: ServiceAccount
+  name: workspace-deployer
+  namespace: ${NAMESPACE}
+roleRef:
+  kind: Role
+  name: workspace-deployer-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ClusterRole for read-only cluster-wide resources (nodes, namespaces, etc.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workspace-cluster-reader-${NAMESPACE}
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+    namespace: ${NAMESPACE}
+rules:
+# Read-only access to cluster-wide resources
+- apiGroups: [""]
+  resources: ["nodes", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch"]
+# Metrics server access
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+---
+# ClusterRoleBinding for cluster-wide read access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workspace-cluster-reader-${NAMESPACE}
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+    namespace: ${NAMESPACE}
+subjects:
+- kind: ServiceAccount
+  name: workspace-deployer
+  namespace: ${NAMESPACE}
+roleRef:
+  kind: ClusterRole
+  name: workspace-cluster-reader-${NAMESPACE}
+  apiGroup: rbac.authorization.k8s.io

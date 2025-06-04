@@ -50,6 +50,7 @@ k8s_client = client.ApiClient()
 v1 = client.CoreV1Api()
 apps_v1 = client.AppsV1Api()
 networking_v1 = client.NetworkingV1Api()
+rbac_v1 = client.RbacAuthorizationV1Api()
 
 # Pydantic models
 class ProjectRequest(BaseModel):
@@ -65,23 +66,31 @@ def generate_namespace() -> str:
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     return f"proj-{suffix}"
 
-def load_manifest_template() -> str:
-    """Load the workspace template YAML"""
-    template_path = "/app/manifests/workspace-template.yaml"
+def load_manifest_template(template_name: str) -> str:
+    """Load a manifest template YAML"""
+    template_path = f"/app/manifests/{template_name}"
     if not os.path.exists(template_path):
-        template_path = "../manifests/workspace-template.yaml"
+        template_path = f"../manifests/{template_name}"
 
     try:
         with open(template_path, 'r') as f:
             return f.read()
     except FileNotFoundError:
         logger.error(f"Template file not found at {template_path}")
-        raise HTTPException(status_code=500, detail="Workspace template not found")
+        raise HTTPException(status_code=500, detail=f"Template {template_name} not found")
 
 def apply_manifest(namespace: str) -> None:
     """Apply Kubernetes manifests for a new workspace"""
-    template = load_manifest_template()
-    manifest_yaml = template.replace("${NAMESPACE}", namespace)
+    # First apply RBAC resources
+    rbac_template = load_manifest_template("rbac-template.yaml")
+    rbac_yaml = rbac_template.replace("${NAMESPACE}", namespace)
+
+    # Then apply workspace resources
+    workspace_template = load_manifest_template("workspace-template.yaml")
+    workspace_yaml = workspace_template.replace("${NAMESPACE}", namespace)
+
+    # Combine both templates
+    manifest_yaml = rbac_yaml + "\n---\n" + workspace_yaml
 
     # Parse and apply each document in the YAML
     import yaml
@@ -89,17 +98,17 @@ def apply_manifest(namespace: str) -> None:
         # Parse the YAML documents
         documents = list(yaml.safe_load_all(manifest_yaml))
 
+        # First pass: Create namespaces
         for doc in documents:
             if not doc:  # Skip empty documents
                 continue
 
             kind = doc.get('kind')
-            api_version = doc.get('apiVersion')
-            metadata = doc.get('metadata', {})
-            doc_namespace = metadata.get('namespace', 'default')
-            name = metadata.get('name')
-
             if kind == 'Namespace':
+                api_version = doc.get('apiVersion')
+                metadata = doc.get('metadata', {})
+                name = metadata.get('name')
+
                 # Create namespace
                 namespace_obj = client.V1Namespace(
                     metadata=client.V1ObjectMeta(
@@ -116,6 +125,20 @@ def apply_manifest(namespace: str) -> None:
                     else:
                         raise
 
+        # Second pass: Create all other resources
+        for doc in documents:
+            if not doc:  # Skip empty documents
+                continue
+
+            kind = doc.get('kind')
+            api_version = doc.get('apiVersion')
+            metadata = doc.get('metadata', {})
+            doc_namespace = metadata.get('namespace', 'default')
+            name = metadata.get('name')
+
+            if kind == 'Namespace':
+                # Skip - already handled in first pass
+                continue
             elif kind == 'Deployment':
                 # Create deployment
                 deployment_obj = client.V1Deployment(
@@ -136,6 +159,7 @@ def apply_manifest(namespace: str) -> None:
                                 labels=doc['spec']['template']['metadata']['labels']
                             ),
                             spec=client.V1PodSpec(
+                                service_account_name=doc['spec']['template']['spec'].get('serviceAccountName'),
                                 containers=[
                                     client.V1Container(
                                         name=container['name'],
@@ -249,6 +273,142 @@ def apply_manifest(namespace: str) -> None:
                 networking_v1.create_namespaced_ingress(namespace=doc_namespace, body=ingress_obj)
                 logger.info(f"Created ingress: {name} in namespace: {doc_namespace}")
 
+            elif kind == 'ServiceAccount':
+                # Create service account
+                sa_obj = client.V1ServiceAccount(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {})
+                    )
+                )
+                try:
+                    v1.create_namespaced_service_account(namespace=doc_namespace, body=sa_obj)
+                    logger.info(f"Created service account: {name} in namespace: {doc_namespace}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Service account {name} already exists")
+                    else:
+                        raise
+
+            elif kind == 'Role':
+                # Create role
+                role_obj = client.V1Role(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {})
+                    ),
+                    rules=[
+                        client.V1PolicyRule(
+                            api_groups=rule.get('apiGroups', []),
+                            resources=rule.get('resources', []),
+                            verbs=rule.get('verbs', [])
+                        ) for rule in doc['rules']
+                    ]
+                )
+                try:
+                    rbac_v1.create_namespaced_role(namespace=doc_namespace, body=role_obj)
+                    logger.info(f"Created role: {name} in namespace: {doc_namespace}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Role {name} already exists")
+                    else:
+                        raise
+
+            elif kind == 'RoleBinding':
+                # Create role binding
+                rb_obj = client.V1RoleBinding(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {})
+                    ),
+                    subjects=[
+                        client.V1Subject(
+                            kind=subject.get('kind'),
+                            name=subject.get('name'),
+                            namespace=subject.get('namespace')
+                        ) for subject in doc['subjects']
+                    ],
+                    role_ref=client.V1RoleRef(
+                        api_group=doc['roleRef']['apiGroup'],
+                        kind=doc['roleRef']['kind'],
+                        name=doc['roleRef']['name']
+                    )
+                )
+                try:
+                    rbac_v1.create_namespaced_role_binding(namespace=doc_namespace, body=rb_obj)
+                    logger.info(f"Created role binding: {name} in namespace: {doc_namespace}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Role binding {name} already exists")
+                    else:
+                        raise
+
+            elif kind == 'ClusterRole':
+                # Create cluster role
+                cr_obj = client.V1ClusterRole(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        labels=metadata.get('labels', {})
+                    ),
+                    rules=[
+                        client.V1PolicyRule(
+                            api_groups=rule.get('apiGroups', []),
+                            resources=rule.get('resources', []),
+                            verbs=rule.get('verbs', [])
+                        ) for rule in doc['rules']
+                    ]
+                )
+                try:
+                    rbac_v1.create_cluster_role(body=cr_obj)
+                    logger.info(f"Created cluster role: {name}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Cluster role {name} already exists")
+                    else:
+                        raise
+
+            elif kind == 'ClusterRoleBinding':
+                # Create cluster role binding
+                crb_obj = client.V1ClusterRoleBinding(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        labels=metadata.get('labels', {})
+                    ),
+                    subjects=[
+                        client.V1Subject(
+                            kind=subject.get('kind'),
+                            name=subject.get('name'),
+                            namespace=subject.get('namespace')
+                        ) for subject in doc['subjects']
+                    ],
+                    role_ref=client.V1RoleRef(
+                        api_group=doc['roleRef']['apiGroup'],
+                        kind=doc['roleRef']['kind'],
+                        name=doc['roleRef']['name']
+                    )
+                )
+                try:
+                    rbac_v1.create_cluster_role_binding(body=crb_obj)
+                    logger.info(f"Created cluster role binding: {name}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Cluster role binding {name} already exists")
+                    else:
+                        raise
+
         logger.info(f"Applied all manifests for namespace: {namespace}")
     except Exception as e:
         logger.error(f"Failed to apply manifests: {e}")
@@ -321,7 +481,25 @@ async def list_projects():
 async def delete_project(namespace: str):
     """Delete a workspace project"""
     try:
-        # Delete the namespace (this will delete all resources in it)
+        # Delete cluster-wide RBAC resources first
+        cluster_role_name = f"workspace-cluster-reader-{namespace}"
+        cluster_role_binding_name = f"workspace-cluster-reader-{namespace}"
+
+        try:
+            rbac_v1.delete_cluster_role(name=cluster_role_name)
+            logger.info(f"Deleted cluster role: {cluster_role_name}")
+        except ApiException as e:
+            if e.status != 404:  # Ignore if not found
+                logger.warning(f"Failed to delete cluster role {cluster_role_name}: {e}")
+
+        try:
+            rbac_v1.delete_cluster_role_binding(name=cluster_role_binding_name)
+            logger.info(f"Deleted cluster role binding: {cluster_role_binding_name}")
+        except ApiException as e:
+            if e.status != 404:  # Ignore if not found
+                logger.warning(f"Failed to delete cluster role binding {cluster_role_binding_name}: {e}")
+
+        # Delete the namespace (this will delete all namespaced resources in it)
         v1.delete_namespace(name=namespace)
         logger.info(f"Deleted namespace: {namespace}")
         return {"message": f"Project {namespace} deleted successfully"}

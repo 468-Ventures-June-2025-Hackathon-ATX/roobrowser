@@ -23,6 +23,7 @@ spec:
       labels:
         app: vscode-server
     spec:
+      serviceAccountName: workspace-deployer
       containers:
       - name: vscode-server
         image: gitpod/openvscode-server:latest
@@ -33,10 +34,73 @@ spec:
           value: "/home/workspace"
         - name: ALLOWED_EXTENSIONS
           value: "roo-code"
+        - name: KUBECONFIG
+          value: "/home/.kube/config"
         command:
         - /bin/bash
         - -c
         - |
+          # Create .kube directory
+          mkdir -p /home/.kube
+
+          # Setup kubeconfig using service account token
+          echo "🔧 Setting up kubeconfig..."
+          KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          KUBE_CA_CERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          KUBE_NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+
+          # Create kubeconfig
+          cat > /home/.kube/config << EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              certificate-authority: ${KUBE_CA_CERT}
+              server: https://kubernetes.default.svc.cluster.local
+            name: default-cluster
+          contexts:
+          - context:
+              cluster: default-cluster
+              namespace: ${KUBE_NAMESPACE}
+              user: default-user
+            name: default-context
+          current-context: default-context
+          users:
+          - name: default-user
+            user:
+              token: ${KUBE_TOKEN}
+          EOF
+
+          chmod 600 /home/.kube/config
+          echo "✅ kubeconfig created successfully"
+
+          # Install kubectl
+          echo "📦 Installing kubectl..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+          chmod +x kubectl && \
+          sudo mv kubectl /usr/local/bin/ && \
+          echo "✅ kubectl installed successfully" || \
+          echo "⚠️  Could not install kubectl"
+
+          # Install skaffold
+          echo "📦 Installing skaffold..."
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 && \
+          chmod +x skaffold && \
+          sudo mv skaffold /usr/local/bin/ && \
+          echo "✅ skaffold installed successfully" || \
+          echo "⚠️  Could not install skaffold"
+
+          # Verify installations and permissions
+          echo "🔍 Verifying installations and permissions..."
+          kubectl version --client || echo "kubectl not available"
+          skaffold version || echo "skaffold not available"
+
+          # Test kubectl access
+          echo "🔍 Testing kubectl access..."
+          kubectl get pods -n ${KUBE_NAMESPACE} || echo "kubectl access test failed"
+          kubectl auth can-i create deployments -n ${KUBE_NAMESPACE} || echo "Cannot create deployments"
+          kubectl auth can-i create services -n ${KUBE_NAMESPACE} || echo "Cannot create services"
+
           # Download and install Roo Code extension
           echo "📦 Installing Roo Code extension..."
           curl -L -o /tmp/roo-code.vsix "https://github.com/RooCodeInc/Roo-Code/releases/download/v3.19.3/roo-cline-3.19.3.vsix" || \
@@ -67,13 +131,13 @@ spec:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60  # Increased to allow time for tool installation
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
             port: 3000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30  # Increased to allow time for tool installation
           periodSeconds: 5
         resources:
           requests:
@@ -82,6 +146,8 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1000m"
+        securityContext:
+          runAsUser: 0  # Run as root to allow sudo commands
       volumes:
       - name: workspace
         emptyDir: {}
