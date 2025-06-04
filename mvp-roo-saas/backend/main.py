@@ -84,11 +84,173 @@ def apply_manifest(namespace: str) -> None:
     manifest_yaml = template.replace("${NAMESPACE}", namespace)
 
     # Parse and apply each document in the YAML
-    from kubernetes import utils
+    import yaml
     try:
-        utils.create_from_yaml_data(k8s_client, manifest_yaml)
-        logger.info(f"Applied manifests for namespace: {namespace}")
-    except ApiException as e:
+        # Parse the YAML documents
+        documents = list(yaml.safe_load_all(manifest_yaml))
+
+        for doc in documents:
+            if not doc:  # Skip empty documents
+                continue
+
+            kind = doc.get('kind')
+            api_version = doc.get('apiVersion')
+            metadata = doc.get('metadata', {})
+            doc_namespace = metadata.get('namespace', 'default')
+            name = metadata.get('name')
+
+            if kind == 'Namespace':
+                # Create namespace
+                namespace_obj = client.V1Namespace(
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        labels=metadata.get('labels', {})
+                    )
+                )
+                try:
+                    v1.create_namespace(namespace_obj)
+                    logger.info(f"Created namespace: {name}")
+                except ApiException as e:
+                    if e.status == 409:  # Already exists
+                        logger.info(f"Namespace {name} already exists")
+                    else:
+                        raise
+
+            elif kind == 'Deployment':
+                # Create deployment
+                deployment_obj = client.V1Deployment(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {})
+                    ),
+                    spec=client.V1DeploymentSpec(
+                        replicas=doc['spec']['replicas'],
+                        selector=client.V1LabelSelector(
+                            match_labels=doc['spec']['selector']['matchLabels']
+                        ),
+                        template=client.V1PodTemplateSpec(
+                            metadata=client.V1ObjectMeta(
+                                labels=doc['spec']['template']['metadata']['labels']
+                            ),
+                            spec=client.V1PodSpec(
+                                containers=[
+                                    client.V1Container(
+                                        name=container['name'],
+                                        image=container['image'],
+                                        ports=[client.V1ContainerPort(container_port=port['containerPort'])
+                                               for port in container.get('ports', [])],
+                                        env=[client.V1EnvVar(name=env['name'], value=env['value'])
+                                            for env in container.get('env', [])],
+                                        command=container.get('command'),
+                                        volume_mounts=[
+                                            client.V1VolumeMount(
+                                                name=vm['name'],
+                                                mount_path=vm['mountPath']
+                                            ) for vm in container.get('volumeMounts', [])
+                                        ],
+                                        liveness_probe=client.V1Probe(
+                                            http_get=client.V1HTTPGetAction(
+                                                path=container['livenessProbe']['httpGet']['path'],
+                                                port=container['livenessProbe']['httpGet']['port']
+                                            ),
+                                            initial_delay_seconds=container['livenessProbe']['initialDelaySeconds'],
+                                            period_seconds=container['livenessProbe']['periodSeconds']
+                                        ) if 'livenessProbe' in container else None,
+                                        readiness_probe=client.V1Probe(
+                                            http_get=client.V1HTTPGetAction(
+                                                path=container['readinessProbe']['httpGet']['path'],
+                                                port=container['readinessProbe']['httpGet']['port']
+                                            ),
+                                            initial_delay_seconds=container['readinessProbe']['initialDelaySeconds'],
+                                            period_seconds=container['readinessProbe']['periodSeconds']
+                                        ) if 'readinessProbe' in container else None,
+                                        resources=client.V1ResourceRequirements(
+                                            requests=container['resources']['requests'],
+                                            limits=container['resources']['limits']
+                                        ) if 'resources' in container else None
+                                    ) for container in doc['spec']['template']['spec']['containers']
+                                ],
+                                volumes=[
+                                    client.V1Volume(
+                                        name=volume['name'],
+                                        empty_dir=client.V1EmptyDirVolumeSource()
+                                    ) for volume in doc['spec']['template']['spec'].get('volumes', [])
+                                ]
+                            )
+                        )
+                    )
+                )
+                apps_v1.create_namespaced_deployment(namespace=doc_namespace, body=deployment_obj)
+                logger.info(f"Created deployment: {name} in namespace: {doc_namespace}")
+
+            elif kind == 'Service':
+                # Create service
+                service_obj = client.V1Service(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {})
+                    ),
+                    spec=client.V1ServiceSpec(
+                        selector=doc['spec']['selector'],
+                        ports=[
+                            client.V1ServicePort(
+                                port=port['port'],
+                                target_port=port['targetPort'],
+                                protocol=port['protocol']
+                            ) for port in doc['spec']['ports']
+                        ],
+                        type=doc['spec']['type']
+                    )
+                )
+                v1.create_namespaced_service(namespace=doc_namespace, body=service_obj)
+                logger.info(f"Created service: {name} in namespace: {doc_namespace}")
+
+            elif kind == 'Ingress':
+                # Create ingress
+                ingress_obj = client.V1Ingress(
+                    api_version=api_version,
+                    kind=kind,
+                    metadata=client.V1ObjectMeta(
+                        name=name,
+                        namespace=doc_namespace,
+                        labels=metadata.get('labels', {}),
+                        annotations=metadata.get('annotations', {})
+                    ),
+                    spec=client.V1IngressSpec(
+                        ingress_class_name=doc['spec'].get('ingressClassName'),
+                        rules=[
+                            client.V1IngressRule(
+                                http=client.V1HTTPIngressRuleValue(
+                                    paths=[
+                                        client.V1HTTPIngressPath(
+                                            path=path['path'],
+                                            path_type=path['pathType'],
+                                            backend=client.V1IngressBackend(
+                                                service=client.V1IngressServiceBackend(
+                                                    name=path['backend']['service']['name'],
+                                                    port=client.V1ServiceBackendPort(
+                                                        number=path['backend']['service']['port']['number']
+                                                    )
+                                                )
+                                            )
+                                        ) for path in rule['http']['paths']
+                                    ]
+                                )
+                            ) for rule in doc['spec']['rules']
+                        ]
+                    )
+                )
+                networking_v1.create_namespaced_ingress(namespace=doc_namespace, body=ingress_obj)
+                logger.info(f"Created ingress: {name} in namespace: {doc_namespace}")
+
+        logger.info(f"Applied all manifests for namespace: {namespace}")
+    except Exception as e:
         logger.error(f"Failed to apply manifests: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create workspace: {e}")
 
