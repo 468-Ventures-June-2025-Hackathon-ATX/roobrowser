@@ -123,6 +123,25 @@ spec:
               echo '{"mcp.servers":{"workspace-deployment":{"command":"node","args":["/home/workspace/.mcp-servers/workspace-deployment/dist/index.js"],"env":{"WORKSPACE_ROOT":"/home/workspace"}}}}' > /home/workspace/.vscode-server/settings.json
             fi
 
+            # Setup Cline MCP configuration
+            echo "🔧 Configuring Cline MCP settings..."
+            MCP_SETTINGS_DIR="/home/workspace/.openvscode-server/data/User/globalStorage/rooveterinaryinc.roo-cline/settings"
+            mkdir -p "$MCP_SETTINGS_DIR"
+
+            # Create MCP settings JSON file
+            echo '{' > "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '  "mcpServers": {' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '    "workspace-deployment": {' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '      "command": "node",' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '      "args": ["/home/workspace/.mcp-servers/workspace-deployment/dist/index.js"],' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '      "env": {' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '        "WORKSPACE_ROOT": "/home/workspace"' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '      }' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '    }' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '  }' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo '}' >> "$MCP_SETTINGS_DIR/mcp_settings.json"
+            echo "✅ Cline MCP settings configured"
+
             # Copy sample projects
             if [ -d "/workspace-template/projects" ]; then
               cp -r /workspace-template/projects /home/workspace/
