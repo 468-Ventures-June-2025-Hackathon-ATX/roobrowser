@@ -1,13 +1,12 @@
 # MVP Roo SaaS - Local Proof of Concept
 
-A local SaaS that spins up on-demand OpenVSCode-Server workspaces with Roo Code pre-installed, orchestrated by k3d Kubernetes cluster.
+A local SaaS that spins up on-demand OpenVSCode-Server workspaces with Roo Code pre-installed, orchestrated by kind Kubernetes cluster.
 
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine + Docker Compose)
-- k3d: `curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash`
+- kind: `go install sigs.k8s.io/kind@v0.20.0` or `brew install kind`
 - kubectl: `curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/darwin/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin/`
-- Helm: `curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash`
 - k9s (optional): `brew install k9s` or download from releases
 
 ## Quick Start
@@ -30,15 +29,15 @@ make logs
 
 1. **Frontend** (React + Vite) on port 3000 with "Create Project" button
 2. **Backend** (FastAPI) on port 5000 handles project creation
-3. **k3d cluster** runs workspaces as Kubernetes deployments
-4. **Traefik ingress** exposes each workspace at `http://localhost/<namespace>/`
+3. **kind cluster** runs workspaces as Kubernetes deployments
+4. **NGINX ingress** exposes each workspace at `http://localhost/<namespace>/`
 5. **CronJob** auto-deletes projects older than 2 hours
 
 ## Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React App     │───▶│   FastAPI       │───▶│   k3d Cluster   │
+│   React App     │───▶│   FastAPI       │───▶│   kind Cluster  │
 │   :3000         │    │   :5000         │    │   :80           │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                                        │

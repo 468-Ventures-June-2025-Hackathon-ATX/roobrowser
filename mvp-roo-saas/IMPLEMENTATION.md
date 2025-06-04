@@ -5,14 +5,14 @@ This document summarizes the complete implementation of the MVP Roo SaaS system 
 ## ✅ All Requirements Implemented
 
 ### Hard Requirements Met:
-1. **✅ Free local tools only**: Uses Docker, k3d, kubectl, Helm, and k9s
+1. **✅ Free local tools only**: Uses Docker, kind, kubectl, and k9s
 2. **✅ Copy-ready commands**: All shell commands, YAML manifests, and code provided
 3. **✅ One-button project creation**: React frontend with "Create Project" button that:
    - Calls FastAPI backend on port 5000
    - Generates random Kubernetes namespace `proj-<random>`
    - Applies Deployment + Service + Ingress for `gitpod/openvscode-server:latest`
    - Pre-installs Roo Code extension during container startup
-   - Exposes IDE at `http://localhost/<namespace>/` via Traefik
+   - Exposes IDE at `http://localhost/<namespace>/` via NGINX Ingress
 4. **✅ Roo Code pre-installation**: Downloads and installs `.vsix` during container startup
 5. **✅ Auto-cleanup**: CronJob deletes projects older than 2 hours
 6. **✅ Single Git repo structure**: Complete folder structure as specified
@@ -21,12 +21,12 @@ This document summarizes the complete implementation of the MVP Roo SaaS system 
 
 #### 1. ✅ Quick-start instructions (README.md)
 - Prerequisites listed
-- `make up` → spins k3d, applies charts, starts backend & frontend
+- `make up` → spins kind cluster, installs ingress, starts backend & frontend
 - `make down` → tears everything down
 
-#### 2. ✅ k3d bootstrap script (k3d/bootstrap.sh)
-- Creates cluster with `k3d cluster create roo --agents 1 --port "80:80@loadbalancer"`
-- Installs metrics-server via Helm
+#### 2. ✅ kind bootstrap script (kind/bootstrap.sh)
+- Creates cluster with multi-node configuration
+- Installs metrics-server and NGINX Ingress Controller
 - Applies cleanup CronJob
 
 #### 3. ✅ Base workspace template (manifests/workspace-template.yaml)
@@ -60,14 +60,14 @@ This document summarizes the complete implementation of the MVP Roo SaaS system 
 - Network configuration
 
 #### 8. ✅ Makefile helpers
-- `make up`: k3d cluster + compose up --build
-- `make down`: compose down && k3d cluster delete
+- `make up`: kind cluster + compose up --build
+- `make down`: compose down && kind cluster delete
 - `make logs`: backend logs + cluster status
 - Additional helpers: status, clean, restart, cluster-info
 
 #### 9. ✅ Testing script (tests/smoke.sh)
 - Tests backend health, frontend accessibility
-- Tests k3d cluster connectivity
+- Tests kind cluster connectivity
 - Creates test project, waits for deployment, tests accessibility
 - Comprehensive error handling and cleanup
 
@@ -83,7 +83,7 @@ Then visit http://localhost:3000 to access the frontend.
 ## 🏗️ Architecture
 
 ```
-Frontend (React + Vite)     Backend (FastAPI)        k3d Cluster
+Frontend (React + Vite)     Backend (FastAPI)        kind Cluster
 Port 3000                   Port 5000                Port 80
      │                           │                        │
      └─── API calls ────────────▶│                        │
@@ -114,8 +114,9 @@ mvp-roo-saas/
 │   ├── main.py          # FastAPI application
 │   ├── requirements.txt # Python dependencies
 │   └── Dockerfile       # Backend container
-├── k3d/                 # Cluster bootstrap
-│   └── bootstrap.sh     # k3d setup script
+├── kind/                # Cluster bootstrap
+│   ├── bootstrap.sh     # kind setup script
+│   └── kind-config.yaml # kind cluster configuration
 ├── manifests/           # Kubernetes templates
 │   ├── workspace-template.yaml  # VSCode deployment
 │   └── cleanup-cronjob.yaml     # Auto-cleanup

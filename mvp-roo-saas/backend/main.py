@@ -2,12 +2,16 @@ import os
 import random
 import string
 import logging
+import urllib3
 from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+
+# Disable SSL warnings for development
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +34,14 @@ try:
 except:
     try:
         config.load_kube_config()  # Fall back to local kubeconfig
+        # If we're using host.docker.internal, disable SSL verification
+        configuration = client.Configuration.get_default_copy()
+        if "host.docker.internal" in configuration.host:
+            configuration.verify_ssl = False
+            configuration.ssl_ca_cert = None
+            configuration.assert_hostname = False
+            client.Configuration.set_default(configuration)
+            logger.info("Disabled SSL verification for host.docker.internal")
     except:
         logger.error("Could not load Kubernetes config")
         raise

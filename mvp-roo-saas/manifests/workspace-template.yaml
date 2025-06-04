@@ -105,28 +105,19 @@ metadata:
   name: vscode-server
   namespace: ${NAMESPACE}
   annotations:
-    traefik.ingress.kubernetes.io/router.rule: "PathPrefix(`/${NAMESPACE}/`)"
-    traefik.ingress.kubernetes.io/router.middlewares: "${NAMESPACE}-stripprefix@kubernetescrd"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
   labels:
     app: vscode-server
 spec:
+  ingressClassName: nginx
   rules:
   - http:
       paths:
-      - path: /${NAMESPACE}
-        pathType: Prefix
+      - path: /${NAMESPACE}(/|$)(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: vscode-server
             port:
               number: 80
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: stripprefix
-  namespace: ${NAMESPACE}
-spec:
-  stripPrefix:
-    prefixes:
-    - /${NAMESPACE}

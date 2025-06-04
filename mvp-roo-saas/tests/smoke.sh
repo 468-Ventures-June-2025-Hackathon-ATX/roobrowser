@@ -32,8 +32,8 @@ test_frontend_accessible() {
     fi
 }
 
-test_k3d_cluster() {
-    echo -n "☸️  Testing k3d cluster... "
+test_kind_cluster() {
+    echo -n "☸️  Testing kind cluster... "
     if kubectl get nodes > /dev/null 2>&1; then
         echo -e "${GREEN}✅ PASS${NC}"
         return 0
@@ -112,7 +112,7 @@ main() {
     # Basic connectivity tests
     test_backend_health || ((FAILED_TESTS++))
     test_frontend_accessible || ((FAILED_TESTS++))
-    test_k3d_cluster || ((FAILED_TESTS++))
+    test_kind_cluster || ((FAILED_TESTS++))
 
     # API functionality tests
     test_list_projects || ((FAILED_TESTS++))
@@ -144,7 +144,7 @@ show_help() {
     echo "This script tests:"
     echo "  ✓ Backend API health"
     echo "  ✓ Frontend accessibility"
-    echo "  ✓ k3d cluster connectivity"
+    echo "  ✓ kind cluster connectivity"
     echo "  ✓ Project creation and deployment"
     echo "  ✓ Project listing"
     echo ""
@@ -160,7 +160,7 @@ case "${1:-}" in
         echo "🏃 Running quick tests only..."
         test_backend_health || exit 1
         test_frontend_accessible || exit 1
-        test_k3d_cluster || exit 1
+        test_kind_cluster || exit 1
         echo -e "${GREEN}✅ Quick tests passed!${NC}"
         exit 0
         ;;
