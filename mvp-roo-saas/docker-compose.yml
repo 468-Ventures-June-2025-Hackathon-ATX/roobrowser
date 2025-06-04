@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "5000:5000"
+      - "5001:5000"
     volumes:
       - ~/.kube:/root/.kube:ro
       - ./manifests:/app/manifests:ro

@@ -26,7 +26,7 @@ services:
 	@echo ""
 	@echo "✅ Roo SaaS MVP is running!"
 	@echo "🌐 Frontend: http://localhost:3000"
-	@echo "🔧 Backend API: http://localhost:5000"
+	@echo "🔧 Backend API: http://localhost:5001"
 	@echo "☸️  Kubernetes: kubectl get pods -A"
 	@echo ""
 
