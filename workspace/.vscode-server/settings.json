@@ -1,0 +1,11 @@
+{
+  "mcp.servers": {
+    "workspace-deployment": {
+      "command": "node",
+      "args": ["/home/workspace/.mcp-servers/workspace-deployment/dist/index.js"],
+      "env": {
+        "WORKSPACE_ROOT": "/home/workspace"
+      }
+    }
+  }
+}

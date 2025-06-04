@@ -72,5 +72,21 @@ KUBECONFIG="$KUBECONFIG_PATH" kubectl wait --namespace ingress-nginx \
 echo "🎯 Applying cleanup CronJob..."
 KUBECONFIG="$KUBECONFIG_PATH" kubectl apply -f ../manifests/cleanup-cronjob.yaml
 
-echo "🎉 kind cluster ready! NGINX Ingress available at http://localhost"
-echo "💡 Use 'kubectl get nodes' to verify cluster status"
+echo "✅ Cleanup CronJob applied successfully"
+
+# Setup workspace template on kind nodes
+echo ""
+echo "📦 Setting up workspace template on kind nodes..."
+if [ -f "../scripts/setup-workspace-template.sh" ]; then
+    ../scripts/setup-workspace-template.sh
+else
+    echo "⚠️  Workspace template setup script not found"
+    echo "💡 You can manually run: scripts/setup-workspace-template.sh"
+fi
+
+echo ""
+echo "🎉 Kind cluster setup complete!"
+echo "📋 Cluster info:"
+KUBECONFIG="$KUBECONFIG_PATH" kubectl cluster-info --context kind-roo
+echo ""
+echo "🚀 Ready to deploy workspaces with MCP server!"

@@ -1,0 +1,27 @@
+FROM gitpod/openvscode-server:latest
+
+# Install Node.js for MCP server
+USER root
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs
+
+# Install MCP server dependencies
+WORKDIR /workspace/.mcp-servers/workspace-deployment
+COPY workspace/.mcp-servers/workspace-deployment/package.json ./
+RUN npm install
+
+# Build MCP server
+COPY workspace/.mcp-servers/workspace-deployment/ ./
+RUN npm run build
+
+# Copy VSCode settings
+COPY workspace/.vscode-server/settings.json /home/.vscode-server/data/Machine/settings.json
+
+# Set workspace as working directory
+WORKDIR /workspace
+
+# Switch back to default user
+USER openvscode-server
+
+# Start with MCP server auto-start
+CMD ["/home/.openvscode-server/bin/openvscode-server", "--host", "0.0.0.0", "--port", "3000", "--without-connection-token", "--accept-server-license-terms"]

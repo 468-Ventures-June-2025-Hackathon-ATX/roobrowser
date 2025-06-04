@@ -90,10 +90,85 @@ spec:
           echo "✅ skaffold installed successfully" || \
           echo "⚠️  Could not install skaffold"
 
+          # Install Node.js for MCP server
+          echo "📦 Installing Node.js..."
+          curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
+          sudo apt-get install -y nodejs && \
+          echo "✅ Node.js installed successfully" || \
+          echo "⚠️  Could not install Node.js"
+
+          # Copy MCP server content from mounted volume
+          echo "📦 Setting up MCP server workspace from template..."
+          if [ -d "/workspace-template" ]; then
+            echo "📋 Copying MCP server files from template..."
+
+            # Copy MCP server implementation
+            if [ -d "/workspace-template/.mcp-servers" ]; then
+              cp -r /workspace-template/.mcp-servers /home/workspace/
+              echo "✅ Copied MCP server files"
+            else
+              echo "⚠️  MCP server template not found, creating basic structure..."
+              mkdir -p /home/workspace/.mcp-servers/workspace-deployment/src
+              mkdir -p /home/workspace/.mcp-servers/workspace-deployment/templates/configmap-static/k8s
+            fi
+
+            # Copy VSCode settings
+            if [ -f "/workspace-template/.vscode-server/settings.json" ]; then
+              mkdir -p /home/workspace/.vscode-server
+              cp /workspace-template/.vscode-server/settings.json /home/workspace/.vscode-server/
+              echo "✅ Copied VSCode settings"
+            else
+              echo "⚠️  VSCode settings template not found, creating basic settings..."
+              mkdir -p /home/workspace/.vscode-server
+              echo '{"mcp.servers":{"workspace-deployment":{"command":"node","args":["/home/workspace/.mcp-servers/workspace-deployment/dist/index.js"],"env":{"WORKSPACE_ROOT":"/home/workspace"}}}}' > /home/workspace/.vscode-server/settings.json
+            fi
+
+            # Copy sample projects
+            if [ -d "/workspace-template/projects" ]; then
+              cp -r /workspace-template/projects /home/workspace/
+              echo "✅ Copied sample projects"
+            else
+              echo "⚠️  Sample projects not found, creating basic structure..."
+              mkdir -p /home/workspace/projects
+            fi
+
+            # Copy setup script
+            if [ -f "/workspace-template/setup-mcp-server.sh" ]; then
+              cp /workspace-template/setup-mcp-server.sh /home/workspace/
+              chmod +x /home/workspace/setup-mcp-server.sh
+              echo "✅ Copied setup script"
+            fi
+
+            # Install MCP server dependencies if package.json exists
+            if [ -f "/home/workspace/.mcp-servers/workspace-deployment/package.json" ]; then
+              echo "📦 Installing MCP server dependencies..."
+              cd /home/workspace/.mcp-servers/workspace-deployment
+              npm install --silent
+              echo "✅ MCP server dependencies installed"
+
+              # Build MCP server if TypeScript source exists
+              if [ -f "/home/workspace/.mcp-servers/workspace-deployment/src/index.ts" ]; then
+                echo "🔨 Building MCP server..."
+                npm run build
+                echo "✅ MCP server built successfully"
+              fi
+
+              cd /
+            fi
+
+          else
+            echo "⚠️  Workspace template volume not mounted, creating minimal structure..."
+            mkdir -p /home/workspace/.mcp-servers/workspace-deployment
+            mkdir -p /home/workspace/.vscode-server
+            mkdir -p /home/workspace/projects
+          fi
+
           # Verify installations and permissions
           echo "🔍 Verifying installations and permissions..."
           kubectl version --client || echo "kubectl not available"
           skaffold version || echo "skaffold not available"
+          node --version || echo "Node.js not available"
+          npm --version || echo "npm not available"
 
           # Test kubectl access
           echo "🔍 Testing kubectl access..."
@@ -127,6 +202,9 @@ spec:
         volumeMounts:
         - name: workspace
           mountPath: /home/workspace
+        - name: workspace-template
+          mountPath: /workspace-template
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /
@@ -151,6 +229,10 @@ spec:
       volumes:
       - name: workspace
         emptyDir: {}
+      - name: workspace-template
+        hostPath:
+          path: /opt/workspace-template
+          type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

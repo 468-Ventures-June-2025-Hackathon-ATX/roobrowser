@@ -79,6 +79,53 @@ def load_manifest_template(template_name: str) -> str:
         logger.error(f"Template file not found at {template_path}")
         raise HTTPException(status_code=500, detail=f"Template {template_name} not found")
 
+def _create_volume(volume_spec: dict) -> client.V1Volume:
+    """Create a Kubernetes volume from volume specification"""
+    volume_name = volume_spec['name']
+    logger.info(f"Creating volume {volume_name} with spec: {volume_spec}")
+
+    if 'emptyDir' in volume_spec:
+        logger.info(f"Creating emptyDir volume: {volume_name}")
+        return client.V1Volume(
+            name=volume_name,
+            empty_dir=client.V1EmptyDirVolumeSource()
+        )
+    elif 'hostPath' in volume_spec:
+        host_path_spec = volume_spec['hostPath']
+        logger.info(f"Creating hostPath volume: {volume_name} -> {host_path_spec['path']}")
+        return client.V1Volume(
+            name=volume_name,
+            host_path=client.V1HostPathVolumeSource(
+                path=host_path_spec['path'],
+                type=host_path_spec.get('type')
+            )
+        )
+    elif 'configMap' in volume_spec:
+        config_map_spec = volume_spec['configMap']
+        logger.info(f"Creating configMap volume: {volume_name}")
+        return client.V1Volume(
+            name=volume_name,
+            config_map=client.V1ConfigMapVolumeSource(
+                name=config_map_spec['name']
+            )
+        )
+    elif 'secret' in volume_spec:
+        secret_spec = volume_spec['secret']
+        logger.info(f"Creating secret volume: {volume_name}")
+        return client.V1Volume(
+            name=volume_name,
+            secret=client.V1SecretVolumeSource(
+                secret_name=secret_spec['secretName']
+            )
+        )
+    else:
+        # Default to emptyDir if no recognized volume type
+        logger.warning(f"Unknown volume type for {volume_name}, defaulting to emptyDir. Volume spec: {volume_spec}")
+        return client.V1Volume(
+            name=volume_name,
+            empty_dir=client.V1EmptyDirVolumeSource()
+        )
+
 def apply_manifest(namespace: str) -> None:
     """Apply Kubernetes manifests for a new workspace"""
     # First apply RBAC resources
@@ -141,6 +188,7 @@ def apply_manifest(namespace: str) -> None:
                 continue
             elif kind == 'Deployment':
                 # Create deployment
+                logger.info(f"Creating deployment with volumes: {doc['spec']['template']['spec'].get('volumes', [])}")
                 deployment_obj = client.V1Deployment(
                     api_version=api_version,
                     kind=kind,
@@ -198,10 +246,7 @@ def apply_manifest(namespace: str) -> None:
                                     ) for container in doc['spec']['template']['spec']['containers']
                                 ],
                                 volumes=[
-                                    client.V1Volume(
-                                        name=volume['name'],
-                                        empty_dir=client.V1EmptyDirVolumeSource()
-                                    ) for volume in doc['spec']['template']['spec'].get('volumes', [])
+                                    _create_volume(volume) for volume in doc['spec']['template']['spec'].get('volumes', [])
                                 ]
                             )
                         )

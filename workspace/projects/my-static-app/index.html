@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Static App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 My Static App</h1>
+            <p>Deployed with Roo Browser MCP Server</p>
+        </header>
+
+        <main>
+            <section class="hero">
+                <h2>Welcome to Static Deployment</h2>
+                <p>This app was deployed using the ConfigMap-static pattern with Skaffold.</p>
+                <button onclick="showMessage()">Click Me!</button>
+            </section>
+
+            <section class="features">
+                <h3>Features</h3>
+                <ul>
+                    <li>✅ Zero Docker builds</li>
+                    <li>✅ Live reload with Skaffold dev</li>
+                    <li>✅ Kubernetes ConfigMap deployment</li>
+                    <li>✅ NGINX serving</li>
+                    <li>✅ Ingress routing</li>
+                </ul>
+            </section>
+        </main>
+
+        <footer>
+            <p>Built with ❤️ using Roo Code MCP Server</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
