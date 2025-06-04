@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${NAMESPACE}
+  labels:
+    roo: "true"
+    created-by: "roo-saas"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vscode-server
+  namespace: ${NAMESPACE}
+  labels:
+    app: vscode-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vscode-server
+  template:
+    metadata:
+      labels:
+        app: vscode-server
+    spec:
+      containers:
+      - name: vscode-server
+        image: gitpod/openvscode-server:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: OPENVSCODE_SERVER_ROOT
+          value: "/home/workspace"
+        - name: ALLOWED_EXTENSIONS
+          value: "roo-code"
+        command:
+        - /bin/bash
+        - -c
+        - |
+          # Download and install Roo Code extension
+          echo "📦 Installing Roo Code extension..."
+          curl -L -o /tmp/roo-code.vsix "https://github.com/roocode-ai/roo-code/releases/latest/download/roo-code.vsix" || \
+          echo "⚠️  Could not download Roo Code extension, continuing without it..."
+
+          # Start OpenVSCode Server
+          if [ -f /tmp/roo-code.vsix ]; then
+            /home/.openvscode-server/bin/openvscode-server \
+              --install-extension /tmp/roo-code.vsix \
+              --host 0.0.0.0 \
+              --port 3000 \
+              --without-connection-token \
+              --accept-server-license-terms
+          else
+            /home/.openvscode-server/bin/openvscode-server \
+              --host 0.0.0.0 \
+              --port 3000 \
+              --without-connection-token \
+              --accept-server-license-terms
+          fi
+        volumeMounts:
+        - name: workspace
+          mountPath: /home/workspace
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: workspace
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vscode-server
+  namespace: ${NAMESPACE}
+  labels:
+    app: vscode-server
+spec:
+  selector:
+    app: vscode-server
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vscode-server
+  namespace: ${NAMESPACE}
+  annotations:
+    traefik.ingress.kubernetes.io/router.rule: "PathPrefix(`/${NAMESPACE}/`)"
+    traefik.ingress.kubernetes.io/router.middlewares: "${NAMESPACE}-stripprefix@kubernetescrd"
+  labels:
+    app: vscode-server
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /${NAMESPACE}
+        pathType: Prefix
+        backend:
+          service:
+            name: vscode-server
+            port:
+              number: 80
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: stripprefix
+  namespace: ${NAMESPACE}
+spec:
+  stripPrefix:
+    prefixes:
+    - /${NAMESPACE}

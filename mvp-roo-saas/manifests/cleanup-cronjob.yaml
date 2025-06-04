@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: roo-cleanup
+  namespace: default
+spec:
+  schedule: "*/30 * * * *"  # Every 30 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: roo-cleanup
+          containers:
+          - name: cleanup
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "🧹 Starting cleanup of old Roo projects..."
+
+              # Get namespaces older than 2 hours with roo=true label
+              OLD_NS=$(kubectl get ns -l roo=true -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.creationTimestamp}{"\n"}{end}' | \
+                while read ns timestamp; do
+                  if [ -n "$timestamp" ]; then
+                    # Convert timestamp to epoch
+                    ts_epoch=$(date -d "$timestamp" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$timestamp" +%s 2>/dev/null || echo 0)
+                    now_epoch=$(date +%s)
+                    age_hours=$(( (now_epoch - ts_epoch) / 3600 ))
+
+                    if [ $age_hours -gt 2 ]; then
+                      echo "$ns"
+                    fi
+                  fi
+                done)
+
+              if [ -n "$OLD_NS" ]; then
+                echo "🗑️  Deleting old namespaces: $OLD_NS"
+                echo "$OLD_NS" | xargs -r kubectl delete ns
+              else
+                echo "✅ No old namespaces to clean up"
+              fi
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: roo-cleanup
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: roo-cleanup
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: roo-cleanup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: roo-cleanup
+subjects:
+- kind: ServiceAccount
+  name: roo-cleanup
+  namespace: default

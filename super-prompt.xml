@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<super-prompt>
+  <title>Copy-and-Paste "Super-Prompt" for Roo Code / ChatGPT</title>
+  <description>Feed this entire block to your AI agent; it will generate the complete local MVP for you.</description>
+
+  <system-context>
+    You are an expert DevOps engineer.
+    Goal: spin up a LOCAL proof-of-concept SaaS that runs OpenVSCode-Server + Roo Code for each "project", using a single-node k3d cluster on my laptop.
+    No authentication, no billing, no TLS. Everything reachable at http://localhost.
+  </system-context>
+
+  <hard-requirements>
+    <requirement id="1">Use only free, local-install tools: Docker, k3d, kubectl, Helm, and k9s.</requirement>
+    <requirement id="2">Provide copy-ready shell commands, Helm / YAML manifests, and minimal React frontend code.</requirement>
+    <requirement id="3">
+      One button ("Create Project") on the front page must:
+      • call a tiny FastAPI backend on port 5000
+      • backend generates a new Kubernetes namespace `proj-&lt;random&gt;`
+      • backend applies a Deployment + Service + Ingress that runs
+        `gitpod/openvscode-server:latest` **with Roo Code pre-installed**
+      • Ingress exposes the IDE at `http://localhost/&lt;namespace&gt;/` via the built-in k3d Traefik.
+    </requirement>
+    <requirement id="4">Show how to pre-install the Roo Code `.vsix` during container start-up.</requirement>
+    <requirement id="5">Auto-delete projects older than 2 hours with a simple CronJob.</requirement>
+    <requirement id="6">
+      Everything lives in a single Git repo with this structure:
+      <![CDATA[
+      mvp-roo-saas/
+      ├── frontend/          # React Vite app
+      ├── backend/           # FastAPI + kubernetes-python client
+      ├── k3d/              # cluster-bootstrap scripts & Helm charts
+      ├── manifests/        # base YAML templates (Namespace, Deployment, Service, Ingress, CronJob)
+      └── README.md         # quick-start
+      ]]>
+    </requirement>
+  </hard-requirements>
+
+  <deliverables>
+    <deliverable id="1">
+      <title>Quick-start instructions (`README.md`)</title>
+      <items>
+        <item>prerequisites</item>
+        <item>`make up` → spins k3d, applies charts, starts backend &amp; frontend in Docker Compose</item>
+        <item>`make down` → tears everything down</item>
+      </items>
+    </deliverable>
+
+    <deliverable id="2">
+      <title>k3d bootstrap script</title>
+      <items>
+        <item>create cluster `k3d cluster create roo --agents 1 --port "80:80@loadbalancer"`</item>
+        <item>install Traefik (already bundled)</item>
+        <item>install metrics-server (Helm)</item>
+      </items>
+    </deliverable>
+
+    <deliverable id="3">
+      <title>Base workspace template (Helm or raw YAML)</title>
+      <description>
+        Values to substitute: `namespace`, `subPath`.
+        Deployment mounts an emptyDir at `/home/workspace`, sets env
+        `ALLOWED_EXTENSIONS="roo-code"` and runs:
+        <![CDATA[
+        openvscode-server --install-extension /roo-code.vsix --host 0.0.0.0 --port 3000
+        ]]>
+        Then a simple HTTP liveness probe on `/.`
+      </description>
+    </deliverable>
+
+    <deliverable id="4">
+      <title>FastAPI backend</title>
+      <items>
+        <item>endpoint `POST /api/projects` → creates namespace + applies manifests (use pydantic models).</item>
+        <item>endpoint `GET /api/projects` → list live namespaces for UI.</item>
+      </items>
+    </deliverable>
+
+    <deliverable id="5">
+      <title>React frontend</title>
+      <items>
+        <item>Vite + Chakra UI (or plain CSS)</item>
+        <item>"Create Project" → fetch `/api/projects` (POST)</item>
+        <item>renders list: "Project abc123 ➜ Open IDE" → href `http://localhost/abc123/`</item>
+      </items>
+    </deliverable>
+
+    <deliverable id="6">
+      <title>CronJob cleanup</title>
+      <description>
+        runs `kubectl delete ns $(kubectl get ns -l roo=true --no-headers | awk '$5 > 2 {print $1}')`
+        where namespace label `roo=true` is set on each project and `$5` is AGE (hours) via `-o jsonpath`
+      </description>
+    </deliverable>
+
+    <deliverable id="7">
+      <title>Docker Compose dev stack</title>
+      <code>
+        <![CDATA[
+        services:
+          backend:
+            build: ./backend
+            ports: ["5000:5000"]
+            env_file: .env
+          frontend:
+            build: ./frontend
+            ports: ["3000:80"]
+            depends_on: [backend]
+        ]]>
+      </code>
+    </deliverable>
+
+    <deliverable id="8">
+      <title>Makefile helpers</title>
+      <items>
+        <item>`make up`: k3d cluster + compose up --build</item>
+        <item>`make down`: compose down &amp;&amp; k3d cluster delete roo</item>
+        <item>`make logs`: tail backend &amp; cluster pods</item>
+      </items>
+    </deliverable>
+
+    <deliverable id="9">
+      <title>Testing script (`bash tests/smoke.sh`)</title>
+      <description>
+        curl POST to backend, wait for Deployment ready, curl `http://localhost/&lt;ns&gt;/` returns HTML.
+      </description>
+    </deliverable>
+  </deliverables>
+
+  <style>
+    Write concise, well-commented code. Use placeholders `&lt;namespace&gt;` clearly indicated.
+    No superfluous boilerplate. Prefer Bash one-liners over lengthy prose where possible.
+  </style>
+
+  <output-format>
+    Return a single Markdown document containing:
+    <items>
+      <item>Quick-start section</item>
+      <item>All code blocks grouped by folder path</item>
+      <item>Any explanatory notes inline as HTML comments `&lt;!-- note --&gt;`</item>
+    </items>
+  </output-format>
+
+  <instruction>START NOW. DO NOT OMIT ANY FILE CONTENTS.</instruction>
+
+  <usage-instructions>
+    <title>How to use it</title>
+    <steps>
+      <step id="1">Open your AI assistant (ChatGPT, Roo Code "Plan Mode", etc.).</step>
+      <step id="2">Paste everything above in one go.</step>
+      <step id="3">Hit *Run / Ask / Execute*.</step>
+      <step id="4">The AI will respond with an entire repo scaffold.</step>
+      <step id="5">Copy the generated files into `mvp-roo-saas/`, run `make up`, and navigate to `http://localhost`.</step>
+    </steps>
+    <result>
+      You now have a local, self-contained MVP that demonstrates on-demand project workspaces running OpenVSCode-Server with Roo Code, all orchestrated by a k3d Kubernetes cluster—no auth, no billing, just proof of concept.
+    </result>
+  </usage-instructions>
+</super-prompt>

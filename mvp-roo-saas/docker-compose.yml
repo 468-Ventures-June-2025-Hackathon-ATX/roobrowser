@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ~/.kube:/root/.kube:ro
+      - ./manifests:/app/manifests:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - roo-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - roo-network
+    restart: unless-stopped
+
+networks:
+  roo-network:
+    driver: bridge
