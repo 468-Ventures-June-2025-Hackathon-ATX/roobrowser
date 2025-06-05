@@ -158,6 +158,13 @@ spec:
               echo "✅ Copied setup script"
             fi
 
+            # Copy mcp dev script
+            if [ -f "/workspace-template/mcp-dev.sh" ]; then
+              cp /workspace-template/mcp-dev.sh /home/workspace/
+              chmod +x /home/workspace/mcp-dev.sh
+              echo "✅ Copied mcp dev script"
+            fi
+
             # Install MCP server dependencies if package.json exists
             if [ -f "/home/workspace/.mcp-servers/workspace-deployment/package.json" ]; then
               echo "📦 Installing MCP server dependencies..."

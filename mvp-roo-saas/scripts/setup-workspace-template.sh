@@ -75,6 +75,12 @@ for NODE in $NODES; do
         echo "✅ Copied setup-mcp-server.sh"
     fi
 
+    # Copy mcp dev script
+    if [ -f "$WORKSPACE_DIR/mcp-dev.sh" ]; then
+        docker cp "$WORKSPACE_DIR/mcp-dev.sh" "$NODE:/opt/workspace-template/"
+        echo "✅ Copied mcp-dev.sh"
+    fi
+
     # Copy documentation files
     for DOC_FILE in README.md DEPLOYMENT.md; do
         if [ -f "$WORKSPACE_DIR/$DOC_FILE" ]; then
